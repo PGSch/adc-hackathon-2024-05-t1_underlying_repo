@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       class_or_method:
-        description: 'class_or_method (InventoryManger)'
+        description: 'class_or_method (InventoryManager)'
         required: true
         type: string
       branch:
@@ -18,7 +18,6 @@ on:
         options:
           - dev
           - main
-          # Add other branch names as needed
       target_branch:
         description: 'Select the target branch for the pull request'
         required: true
@@ -26,14 +25,10 @@ on:
         options:
           - dev
           - main
-          # Add other branch names as needed
 
 jobs:
   process-with-gpt:
     runs-on: ubuntu-latest
-    env:
-      NEW_BRANCH_NAME: GPT-branch
-      TMP_DIR: /tmp/newbranch_test
     steps:
       - name: Check out the repo
         uses: actions/checkout@v2
@@ -50,80 +45,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install --force-reinstall whl/adchackathon202405t1-0.0.7-py3-none-any.whl
 
-      - name: Clone underlying repository
-        run: |
-          git clone https://github.com/WZHPASJ/adc-hackathon-2024-05-t1_underlying_repo $TEMP_DIR
-
-      - name: Extract repository content
-        id: repo-content
-        run: |
-          repository_files=$(find . -type f -not -path '*/\.*')
-          repository_context=""
-          for file in $repository_files; do
-            if grep -qI '.*' "$file"; then  # If the file is a text file, add its content
-              repository_context+=$(echo "
-                --- $file ---
-                $(cat "$file")")
-            else
-              repository_context+=$(echo "
-                --- $file ---
-                <BINARY_FILE>")
-            fi
-          done
-          
-          repository_context=$(echo -n "$repository_context" | base64)
-          echo "::set-output name=repository_context::$repository_context"
-
       - name: Process with my-gpt package
-        id: process-output
         run: |
-          file_name="${{ github.event.inputs.file_name }}"
-          class_or_method="${{ github.event.inputs.class_or_method }}"
-          repository_context="${{ steps.repo-content.outputs.repository_context }}"
-          
-          echo "$repository_context" | base64 --decode > repository_context.txt
-          
-          output=$(python -m src --file_name "$file_name" --class_or_method "$class_or_method")
-          
-          echo "$output"  # Debugging: Output the result to check
-
-          echo "$output" > test.py  # Ensure the output is written to the correct file
-          
-          # Using Environment Files to set output, escaping special characters
-          echo "process_output=$(echo "$output" | jq -R | jq -s | jq -r @uri)" >> $GITHUB_ENV
-
-      - name: Create output directory and file
-        run: |
-          cat test.py  # Debugging: Check the content of the created file
+          python -m src --file_name "${{ github.event.inputs.file_name }}" --class_or_method "${{ github.event.inputs.class_or_method }}"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Create and push new branch
         run: |
-            # cd $TEMP_DIR
-            git config --local user.email "action@github.com"
-            git config --local user.name "GitHub Action"
-            git checkout -b newbranch_test
-            git add -A
-            git commit -m "new release"
-            git push --set-upstream origin newbranch_test
-
-    #   - name: Commit files
-    #     run: |
-    #       git config --local user.email "action@github.com"
-    #       git config --local user.name "GitHub Action"
-    #       git add .
-    #       git status
-    #       git commit -m "Add GPT processed output" || echo "No changes to commit"
-
-    #   - name: Push changes to feature branch
-    #     run: |
-    #       git push -u origin "GPT-branch"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git checkout -b ${{ github.event.inputs.branch }}-${{ github.run_id }}
+          git add -A
+          git commit -m "Processed output by GitHub Action" || echo "No changes to commit"
+          git push --set-upstream origin ${{ github.event.inputs.branch }}-${{ github.run_id }}
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "Add GPT processed output"
-          branch: newbranch_test
+          commit-message: "Processed output by GitHub Action"
+          branch: ${{ github.event.inputs.branch }}-${{ github.run_id }}
           base: ${{ github.event.inputs.target_branch }}
-          title: "Add GPT processed output"
-          body: "This PR adds the GPT processed output."
+          title: "Processed output by GitHub Action"
+          body: "This PR contains processed output by GitHub Action."
